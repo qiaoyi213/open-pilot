@@ -1,48 +1,51 @@
 from openai import OpenAI
 import pyautogui
 import time
-from prompts import SYSTEM_PROMPT
+import prompts
 import base64 
 from dotenv import load_dotenv
+import os
+from utils.operator import Operator
+import json
 
 def capture_screenshot():
     screenshot = pyautogui.screenshot()
     screenshot.save('screenshot.png')
     return "screenshot.png"
 
-def operate(command):
-    """
-    - click_left
-    - click_right
-    - move [x] [y]
-    - scroll [up or down]
-    - wait
-    - double_click_left
-    - type [words]
-    """
-    print("OPERATE COMMAND:", command)
-    if command == "click_left":
-        pyautogui.click()
-    elif command == "click_right":
-        pyautogui.click(button='right')
-    elif command.split()[0] == "move":
-        x = int(command.split()[1])
-        y = int(command.split()[2])
-        pyautogui.moveTo(x, y)
-    elif command == "scroll up":
-        pyautogui.scroll(500)  
-    elif command == "scroll down":
-        pyautogui.scroll(-500)
-    elif command == "wait":
-        time.sleep(5)
-    elif command == "double_click_left":
-        pyautogui.doubleClick()
-    elif command.split()[0] == "type":
-        word = command[5:]
-        pyautogui.write(word)
-    else:
-        print("Invalid operation")
-    
+def operate(commands):
+    operator = Operator()
+    for operation in commands:
+        operate_type = operation['operation']
+        operate_thought = operation['thought']
+        operate_detail = ""
+
+        if operate_type == "press" or operate_type == "hotkey":
+            keys = operation['keys']
+            operate_detail = keys
+            operator.press(keys)
+            
+        elif operate_type == "write":
+            content = operation["content"]
+            operate_detail = content
+            operator.write(content)
+        elif operate_type == "click":
+            x = operation.get("x")
+            y = operation.get("y")
+            click_detail = {"x": x, "y": y}
+            operate_detail = click_detail
+
+            operator.mouse(click_detail)
+        elif operate_type == "done":
+            summary = operation.get("summary")
+
+            print("Done, summary:", summary)
+            return True
+
+        else:
+            print("Invalid operation please do it again.")
+
+        print(f"{operate_thought}")
 def encode_image(image_path):
   with open(image_path, "rb") as image_file:
     return base64.b64encode(image_file.read()).decode('utf-8')
@@ -69,16 +72,11 @@ def main():
                     "content":  [
                         {
                             "type": "text",
-                            "text": SYSTEM_PROMPT
+                            "text": prompts.get_system_prompt(objective=user_task)
                         },
                         {
                             "type": "text",
-                            "text": f'Current cursor position is {pyautogui.position()}. The size of window is {pyautogui.size()}'
-                            
-                        },
-                        {
-                            "type": "text",
-                            "text": f'All thought and command you have done are {commands}'
+                            "text": f'The actions that you are made are {commands}'
                         }
                     ]
                 },
@@ -87,22 +85,28 @@ def main():
                     "content": [
                         {
                             "type": "text",
-                            "text": f'Task: {user_task}'
+                            "text": prompts.get_user_prompt()
                         },
-                        {
+                        {   
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:image/jpeg;base64,{base64_screenshot}"
                             }
                         }
                     ]
-                        
                 },
                 
             ]
         )
-        print(response.choices[0].message.content)
-        command = response.choices[0].message.content.split("Action: ")[1]
-        operate(command)
+        content = response.choices[0].message.content
+
+        if "```json" in content:
+            print(content)
+            content = content[7:-3]
+            
+        print(content)
+        commands = json.loads(content)
+        
+        operate(commands)
         commands += response.choices[0].message.content + "\n"
 main()
