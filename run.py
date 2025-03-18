@@ -7,11 +7,82 @@ from dotenv import load_dotenv
 import os
 from utils.operator import Operator
 import json
+from PIL import Image, ImageDraw, ImageFont
+
+def mark_cursor(img):
+    cursor_x, cursor_y = pyautogui.position()
+    draw = ImageDraw.Draw(img)
+    radius = 20
+    draw.ellipse((cursor_x - radius, cursor_y - radius, cursor_x + radius, cursor_y + radius), fill="red", outline="black", width=3)
+    return img
 
 def capture_screenshot():
     screenshot = pyautogui.screenshot()
+    screenshot = mark_cursor(screenshot)
     screenshot.save('screenshot.png')
     return "screenshot.png"
+
+def encode_image(image_path):
+  with open(image_path, "rb") as image_file:
+    return base64.b64encode(image_file.read()).decode('utf-8')
+
+
+def capture_and_draw_grid(n, m, font_path='arial.ttf', font_size=40):
+    # 擷取螢幕截圖
+    screenshot = pyautogui.screenshot('screenshot.png')
+    print(screenshot)
+    img = screenshot
+    draw = ImageDraw.Draw(img)
+
+    # 計算每個區塊的寬度和高度
+    width, height = img.size
+    block_width = width // n
+    block_height = height // m
+
+    # 設定格線顏色和線寬
+    grid_color = (200, 200, 200)  # 淺灰色
+    grid_width = 1
+
+    # 繪製垂直格線
+    for i in range(1, n):
+        x = i * block_width
+        draw.line([(x, 0), (x, height)], fill=grid_color, width=grid_width)
+
+    # 繪製水平格線
+    for j in range(1, m):
+        y = j * block_height
+        draw.line([(0, y), (width, y)], fill=grid_color, width=grid_width)
+
+    # 在每個區塊上添加數字標記
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except IOError:
+        font = ImageFont.load_default()
+
+    for i in range(n):
+        for j in range(m):
+            # 計算區塊的左上角座標
+            left = i * block_width
+            upper = j * block_height
+
+            # 獲取文字的邊界框
+            text = f'{i * m + j + 1}'
+            bbox = draw.textbbox((left, upper), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+
+            # 計算數字的位置，使其置中
+            text_x = left + (block_width - text_width) // 2
+            text_y = upper + (block_height - text_height) // 2
+
+            # 在區塊上繪製數字
+            draw.text((text_x, text_y), text, font=font, fill=(255, 1, 1))
+
+    # 儲存或顯示結果圖片
+    img.save('screenshot_with_grid_lines.png')
+
+
+    
 
 def operate(commands):
     operator = Operator()
@@ -30,6 +101,8 @@ def operate(commands):
             operate_detail = content
             operator.write(content)
         elif operate_type == "click":
+            operator.click_mouse()
+        elif operate_type == "move":
             x = operation.get("x")
             y = operation.get("y")
             click_detail = {"x": x, "y": y}
@@ -46,10 +119,6 @@ def operate(commands):
             print("Invalid operation please do it again.")
 
         print(f"{operate_thought}")
-def encode_image(image_path):
-  with open(image_path, "rb") as image_file:
-    return base64.b64encode(image_file.read()).decode('utf-8')
-
 
 
 
@@ -62,7 +131,8 @@ def main():
     commands = ""
     for _ in range(num_iters):
         screenshot_path = capture_screenshot()
-        base64_screenshot = encode_image(screenshot_path)
+        #capture_and_draw_grid(32, 18)
+        base64_screenshot = encode_image('screenshot.png')
         
         response = client.chat.completions.create(
             model="gpt-4o",

@@ -16,7 +16,7 @@ def convert_percent_to_decimal(percent):
 
 
 class Operator:
-
+    
     def write(self, content):
         try:
             content = content.replace("\\n", "\n")
@@ -34,19 +34,21 @@ class Operator:
                 pyautogui.keyUp(key)
         except Exception as e:
             print("[Operator][press] error:", e)
-
+    def click_mouse(self):
+        x, y = pyautogui.position()
+        pyautogui.click(x, y)
     def mouse(self, click_detail):
         try:
             x = convert_percent_to_decimal(click_detail.get("x"))
             y = convert_percent_to_decimal(click_detail.get("y"))
 
             if click_detail and isinstance(x, float) and isinstance(y, float):
-                self.click_at_percentage(x, y)
+                self.move_at_percentage(x, y)
 
         except Exception as e:
             print("[Operator][mouse] error:", e)
 
-    def click_at_percentage(
+    def move_at_percentage(
         self,
         x_percentage,
         y_percentage,
@@ -68,6 +70,6 @@ class Operator:
                 y = y_pixel + math.sin(angle) * circle_radius
                 pyautogui.moveTo(x, y, duration=0.1)
 
-            pyautogui.click(x_pixel, y_pixel)
+            
         except Exception as e:
             print("[Operator][click_at_percentage] error:", e) # type: ignore
