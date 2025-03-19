@@ -8,6 +8,7 @@ import os
 from utils.operator import Operator
 import json
 from PIL import Image, ImageDraw, ImageFont
+import io
 
 def mark_cursor(img):
     cursor_x, cursor_y = pyautogui.position()
@@ -19,8 +20,21 @@ def mark_cursor(img):
 def capture_screenshot():
     screenshot = pyautogui.screenshot()
     screenshot = mark_cursor(screenshot)
-    screenshot.save('screenshot.png')
-    return "screenshot.png"
+    screenshot = screenshot.convert("RGB")
+    width, height = screenshot.size
+    new_width = width // 2
+    new_height = height // 2
+    resized_image = screenshot.resize((new_width, new_height))
+
+    buffer = io.BytesIO()
+    
+    resized_image.save(buffer, format="JPEG", optimize=True)
+
+    # Save the compressed screenshot as a file (you can also adjust the quality for JPEG format)
+    with open('screenshot.jpeg', 'wb') as f:
+        f.write(buffer.getvalue())
+    f.close()
+    return "screenshot.jpeg"
 
 def encode_image(image_path):
   with open(image_path, "rb") as image_file:
@@ -114,7 +128,8 @@ def operate(commands):
 
             print("Done, summary:", summary)
             return True
-
+        elif operate_type == "request":
+            _ = input("Press any key to continue...")
         else:
             print("Invalid operation please do it again.")
 
@@ -128,25 +143,18 @@ def main():
     
     load_dotenv()
     client = OpenAI(api_key=os.getenv('OPENAI_API'))
-    commands = ""
+    history = []
     for _ in range(num_iters):
         screenshot_path = capture_screenshot()
         #capture_and_draw_grid(32, 18)
-        base64_screenshot = encode_image('screenshot.png')
-        
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
+        base64_screenshot = encode_image(screenshot_path)
+        payload = [
                 {
                     "role": "system",
                     "content":  [
                         {
                             "type": "text",
                             "text": prompts.get_system_prompt(objective=user_task)
-                        },
-                        {
-                            "type": "text",
-                            "text": f'The actions that you are made are {commands}'
                         }
                     ]
                 },
@@ -164,19 +172,52 @@ def main():
                             }
                         }
                     ]
-                },
-                
+                }
             ]
-        )
+        payload.extend(history)
+        #print(payload)
+        
+        time.sleep(5)
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages= payload
+            )
+        except Exception as e:
+            print(e)
+            continue 
         content = response.choices[0].message.content
 
-        if "```json" in content:
-            print(content)
-            content = content[7:-3]
-            
         print(content)
-        commands = json.loads(content)
+        if "```json" in content:
+            content = content[7:-3]
+            print(content)
+
         
+
+        """
+        history.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompts.get_user_prompt()
+                        },
+                        {   
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_screenshot}"
+                            }
+                        }
+                    ]
+                })
+        
+        
+        """
+        history.append(
+            {"role": "assistant", "content": [{ "type": "text", "text": content}]}
+        )
+        commands = json.loads(content)
         operate(commands)
-        commands += response.choices[0].message.content + "\n"
+
 main()
