@@ -9,7 +9,7 @@ from utils.operator import Operator
 import json
 from PIL import Image, ImageDraw, ImageFont
 import io
-
+import anthropic
 def mark_cursor(img):
     cursor_x, cursor_y = pyautogui.position()
     draw = ImageDraw.Draw(img)
@@ -22,8 +22,8 @@ def capture_screenshot():
     screenshot = mark_cursor(screenshot)
     screenshot = screenshot.convert("RGB")
     width, height = screenshot.size
-    new_width = width // 2
-    new_height = height // 2
+    new_width = width // 3
+    new_height = height // 3
     resized_image = screenshot.resize((new_width, new_height))
 
     buffer = io.BytesIO()
@@ -39,61 +39,6 @@ def capture_screenshot():
 def encode_image(image_path):
   with open(image_path, "rb") as image_file:
     return base64.b64encode(image_file.read()).decode('utf-8')
-
-
-def capture_and_draw_grid(n, m, font_path='arial.ttf', font_size=40):
-    # 擷取螢幕截圖
-    screenshot = pyautogui.screenshot('screenshot.png')
-    print(screenshot)
-    img = screenshot
-    draw = ImageDraw.Draw(img)
-
-    # 計算每個區塊的寬度和高度
-    width, height = img.size
-    block_width = width // n
-    block_height = height // m
-
-    # 設定格線顏色和線寬
-    grid_color = (200, 200, 200)  # 淺灰色
-    grid_width = 1
-
-    # 繪製垂直格線
-    for i in range(1, n):
-        x = i * block_width
-        draw.line([(x, 0), (x, height)], fill=grid_color, width=grid_width)
-
-    # 繪製水平格線
-    for j in range(1, m):
-        y = j * block_height
-        draw.line([(0, y), (width, y)], fill=grid_color, width=grid_width)
-
-    # 在每個區塊上添加數字標記
-    try:
-        font = ImageFont.truetype(font_path, font_size)
-    except IOError:
-        font = ImageFont.load_default()
-
-    for i in range(n):
-        for j in range(m):
-            # 計算區塊的左上角座標
-            left = i * block_width
-            upper = j * block_height
-
-            # 獲取文字的邊界框
-            text = f'{i * m + j + 1}'
-            bbox = draw.textbbox((left, upper), text, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-
-            # 計算數字的位置，使其置中
-            text_x = left + (block_width - text_width) // 2
-            text_y = upper + (block_height - text_height) // 2
-
-            # 在區塊上繪製數字
-            draw.text((text_x, text_y), text, font=font, fill=(255, 1, 1))
-
-    # 儲存或顯示結果圖片
-    img.save('screenshot_with_grid_lines.png')
 
 
     
@@ -136,57 +81,90 @@ def operate(commands):
         print(f"{operate_thought}")
 
 
-
 def main():
-    num_iters = 50
+    num_iters = 10
     user_task = input("Enter your task for the agent: ")
     
     load_dotenv()
-    client = OpenAI(api_key=os.getenv('OPENAI_API'))
-    history = []
+    provider = "Anthropic"
+    if provider == "OpenAI":
+        client = OpenAI(api_key=os.getenv('OPENAI_API'))
+    else:
+        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API'))
+
+    trajectory = []
+    error = ""
     for _ in range(num_iters):
         screenshot_path = capture_screenshot()
         #capture_and_draw_grid(32, 18)
         base64_screenshot = encode_image(screenshot_path)
-        payload = [
-                {
-                    "role": "system",
-                    "content":  [
-                        {
-                            "type": "text",
-                            "text": prompts.get_system_prompt(objective=user_task)
-                        }
-                    ]
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompts.get_user_prompt()
-                        },
-                        {   
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_screenshot}"
+        if provider == "OpenAI":
+            payload = [
+                    {
+                        "role": "system",
+                        "content":  [
+                            {
+                                "type": "text",
+                                "text": prompts.get_system_prompt(objective=user_task, trajectory=trajectory, error=error)
                             }
-                        }
-                    ]
-                }
-            ]
-        payload.extend(history)
-        #print(payload)
-        
-        time.sleep(5)
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages= payload
+                        ]
+                    },
+                    
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": prompts.get_user_prompt()
+                            },
+                            {   
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_screenshot}"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages= payload
+                )
+            except Exception as e:
+                print(e)
+                continue 
+            
+            content = response.choices[0].message.content
+        else:
+            message = client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=1000,
+                temperature=1,
+                system=prompts.get_system_prompt(objective=user_task, trajectory=trajectory, error=error),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": prompts.get_user_prompt()
+                            },
+                            {   
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/jpeg",
+                                    "data": base64_screenshot
+                                }
+                            }
+                        ]
+                    }
+                ]
             )
-        except Exception as e:
-            print(e)
-            continue 
-        content = response.choices[0].message.content
+
+            content = message.content[0].text
 
         print(content)
         if "```json" in content:
@@ -194,30 +172,63 @@ def main():
             print(content)
 
         
+        trajectory.append(content)
 
-        """
-        history.append({
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompts.get_user_prompt()
-                        },
-                        {   
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_screenshot}"
-                            }
-                        }
-                    ]
-                })
-        
-        
-        """
-        history.append(
-            {"role": "assistant", "content": [{ "type": "text", "text": content}]}
-        )
         commands = json.loads(content)
         operate(commands)
+        time.sleep(5)
+        
+        # Error grounding 
+        screenshot_path = capture_screenshot()
+        #capture_and_draw_grid(32, 18)
+        base64_screenshot = encode_image(screenshot_path)
+        if provider == "OpenAI":
+            payload = [
+                    {
+                        "role": "system",
+                        "content":  [
+                            {
+                                "type": "text",
+                                "text": prompts.get_error_grounding_prompt(thought=commands, screenshot=base64_screenshot)
+                            }
+                        ]
+                    }
+                ]
+            
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages= payload
+                )
+            except Exception as e:
+                print(e)
+                continue 
+            error = response.choices[0].message.content
+        else:
+            message = client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=1000,
+                temperature=1,
+                system=prompts.get_error_grounding_prompt(thought=commands),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {   
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/jpeg",
+                                    "data": base64_screenshot
+                                }
+                            }
+                        ]
+                    }
+                ]
+                
+            )
 
+            error = message.content[0].text
+        
+        print(error)
 main()
