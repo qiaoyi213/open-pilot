@@ -10,6 +10,7 @@ import json
 from PIL import Image, ImageDraw, ImageFont
 import io
 import anthropic
+from eval import eval
 def mark_cursor(img):
     cursor_x, cursor_y = pyautogui.position()
     draw = ImageDraw.Draw(img)
@@ -65,8 +66,6 @@ def operate(commands):
             x = operation.get("x")
             y = operation.get("y")
             click_detail = {"x": x, "y": y}
-            operate_detail = click_detail
-
             operator.mouse(click_detail)
         elif operate_type == "done":
             summary = operation.get("summary")
@@ -167,14 +166,18 @@ def main():
             content = message.content[0].text
 
         print(content)
-        if "```json" in content:
-            content = content[7:-3]
-            print(content)
+
+        content = eval(content=content)
+
+        print(content)
 
         
         trajectory.append(content)
-
-        commands = json.loads(content)
+        try:
+            commands = json.loads(content)
+        except Exception as e:
+                print(e)
+                continue 
         operate(commands)
         time.sleep(5)
         
@@ -209,7 +212,7 @@ def main():
                 model="claude-3-5-haiku-20241022",
                 max_tokens=1000,
                 temperature=1,
-                system=prompts.get_error_grounding_prompt(thought=commands),
+                system=prompts.get_error_grounding_prompt(objective=user_task,thought=commands),
                 messages=[
                     {
                         "role": "user",
