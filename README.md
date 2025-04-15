@@ -24,7 +24,7 @@ Open-Pilot is a Python project designed to interact with a large language model 
     ```
 
 ## Usage
-
+First, copy the `.env_sample` to `.env` and fill in your openai key api and anthropic api.
 To run the program, use the `run.py` script. This script will execute a sequence of tasks using predefined or dynamically generated prompts.
 
 1. Run the main script:
