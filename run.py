@@ -20,8 +20,11 @@ def mark_cursor(img):
 
 def capture_screenshot():
     screenshot = pyautogui.screenshot()
+    screenshot = screenshot.resize(pyautogui.size())
+
     screenshot = mark_cursor(screenshot)
     screenshot = screenshot.convert("RGB")
+    
     width, height = screenshot.size
     new_width = width // 3
     new_height = height // 3

@@ -1,4 +1,5 @@
 import platform
+import pyautogui
 
 SYSTEM_PROMPT_STANDARD = """
 You are operating a {operating_system} computer, using the same operating system as a human.
@@ -58,6 +59,9 @@ A few important notes:
 - You are only allowed to write thought and text in the jsonl format.
 
 Objective: {objective} 
+
+If need to move mouse, review the position of the mouse now and decide a precise position to move the mouse.
+Position: {position}
 """
 
 SYSTEM_PROMPT_WITH_ERROR = """
@@ -118,11 +122,14 @@ A few important notes:
 - You are only allowed to write thought and text in the jsonl format.
 
 Objective: {objective} 
-Below, you will receive previous operations that you did and the reply from error grounding to tell the result of operations. 
-Please take the suggestion to choose your next step.
 
+If need to move mouse, review the position of the mouse now and decide a precise position to move the mouse.
+Position: {position}
+
+If the task isn't working as expected, review all previous steps to identify any errors and make necessary corrections.Please do not repeat the same action if the webpage remains unchanged. You may have selected the wrong web element or numerical label. Try to use Scroll to find the different information.
 Trajectory: {trajectory}
 
+The error grounding bot will analysis your last step and give you a error grounding message. Please refer to the error grounding to plan the next step.
 Error Grounding: {error}
 """
 
@@ -143,14 +150,16 @@ You are an error-grounding robot. You will be given a "Thought" of what the exec
 An error occurs when the result in the screenshot does not match the expected outcome described in the intent.
 Your task is to detect whether any errors have occurred, explain their causes and suggest another action.
 
-To mention it, the screenshot will mark the position of cursor as read circle, the executor will usually be wrong when it control the mouse.
-You need to check the the movement of mouse very careful.
+To mention it, you will get the position of mouse, the executor will usually be wrong when it control the mouse.
+You need to check the the movement of mouse very careful. The corrdinate of the screen is that left-up corner is (0,0), right-down corner is (1,1).
 ---------------------------------------------------------------------------------------------------------------------------------------------------------
 You are provided with the following information:
 
 User Task: {objective}
 
 Thought: {thought}
+
+Position: {position}
 
 Your reply should strictly follow the format:
 Errors: (Yes/No)Are there any errors?
@@ -174,13 +183,16 @@ def get_system_prompt(objective, trajectory, error):
         cmd_string = "\"ctrl\""
         os_search_str = "[\"win\"]"
         operating_system = "Linux"
-
+    
+    position = pyautogui.position()
+    size = pyautogui.size()
     if error == "":
         prompt = SYSTEM_PROMPT_STANDARD.format(
             objective=objective,
             cmd_string=cmd_string,
             os_search_str=os_search_str,
             operating_system=operating_system,
+            position=f"x={position.x/size.width}, y={position.y/size.height}"
         )
     else :
         prompt = SYSTEM_PROMPT_WITH_ERROR.format(
@@ -189,16 +201,20 @@ def get_system_prompt(objective, trajectory, error):
             os_search_str=os_search_str,
             operating_system=operating_system,
             trajectory = trajectory,
-            error = error
+            error = error,
+            position=f"x={position.x/size.width}, y={position.y/size.height}"
         )
 
 
     return prompt
 
 def get_error_grounding_prompt(objective, thought):
+    position = pyautogui.position()
+    size = pyautogui.size()
     prompt = ERROR_GROUNDING_PROMPT.format(
         objective=objective,
-        thought=thought
+        thought=thought,
+        position=f"x={position.x/size.width}, y={position.y/size.height}"
     )
     return prompt
 
