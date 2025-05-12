@@ -43,7 +43,12 @@ class Operator:
             y = convert_percent_to_decimal(click_detail.get("y"))
 
             if click_detail and isinstance(x, float) and isinstance(y, float):
-                self.move_at_percentage(x, y)
+                #self.move_at_percentage(x, y)
+                screen_width, screen_height = pyautogui.size()
+                x_pixel = int(screen_width * float(x))
+                y_pixel = int(screen_height * float(y))
+
+                pyautogui.moveTo(x_pixel, y_pixel)
 
         except Exception as e:
             print("[Operator][mouse] error:", e)

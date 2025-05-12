@@ -11,6 +11,8 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import anthropic
 from eval import eval
+from utils.rag import RAGModel
+
 def mark_cursor(img):
     cursor_x, cursor_y = pyautogui.position()
     draw = ImageDraw.Draw(img)
@@ -26,8 +28,8 @@ def capture_screenshot():
     screenshot = screenshot.convert("RGB")
     
     width, height = screenshot.size
-    new_width = width // 3
-    new_height = height // 3
+    new_width = width 
+    new_height = height 
     resized_image = screenshot.resize((new_width, new_height))
 
     buffer = io.BytesIO()
@@ -44,8 +46,6 @@ def encode_image(image_path):
   with open(image_path, "rb") as image_file:
     return base64.b64encode(image_file.read()).decode('utf-8')
 
-
-    
 
 def operate(commands):
     operator = Operator()
@@ -84,34 +84,88 @@ def operate(commands):
 
 
 def main():
-    num_iters = 10
+
+
+    ragclient = RAGModel()
+    ragclient.load_pdf('data/sage_tutorial.pdf')
+    
+    num_iters = 15
     user_task = input("Enter your task for the agent: ")
     
     load_dotenv()
-    provider = "Anthropic"
-    if provider == "OpenAI":
-        client = OpenAI(api_key=os.getenv('OPENAI_API'))
-    else:
-        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API'))
-
+    
+    client = OpenAI(api_key=os.getenv('OPENAI_API'))
     trajectory = []
     error = ""
     for _ in range(num_iters):
         screenshot_path = capture_screenshot()
-        #capture_and_draw_grid(32, 18)
         base64_screenshot = encode_image(screenshot_path)
-        if provider == "OpenAI":
-            payload = [
+        context = ragclient.generate(prompts.get_system_prompt(objective=user_task, trajectory=trajectory, error=error))
+
+        print(context)
+
+        payload = [
+                {
+                    "role": "system",
+                    "content":  [
+                        {
+                            "type": "text",
+                            "text": prompts.get_rag_prompt(objective=user_task, trajectory=trajectory, error=error, context=context)
+                        },
+                        
+                    ]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompts.get_user_prompt()
+                        },
+                        {   
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_screenshot}"
+                            }
+                        }
+                    ]
+                }
+            ]
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages= payload
+            )
+        except Exception as e:
+            print(e)
+            continue 
+        content = response.choices[0].message.content
+
+        content = eval(content=content)
+
+        print(content)
+        trajectory.append(content)
+        try:
+            commands = json.loads(content)
+        except Exception as e:
+                print(e)
+                continue
+        operate(commands)
+        time.sleep(1)
+        
+        # Error grounding 
+        screenshot_path = capture_screenshot()
+        base64_screenshot = encode_image(screenshot_path)
+        payload = [
                     {
                         "role": "system",
                         "content":  [
                             {
                                 "type": "text",
-                                "text": prompts.get_system_prompt(objective=user_task, trajectory=trajectory, error=error)
+                                "text": prompts.get_error_grounding_prompt(objective=user_task, thought=commands)
                             }
                         ]
                     },
-                    
                     {
                         "role": "user",
                         "content": [
@@ -128,113 +182,10 @@ def main():
                         ]
                     }
                 ]
-            
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages= payload
-                )
-            except Exception as e:
-                print(e)
-                continue 
-            
-            content = response.choices[0].message.content
-        else:
-            message = client.messages.create(
-                model="claude-3-5-haiku-20241022",
-                max_tokens=1000,
-                temperature=1,
-                system=prompts.get_system_prompt(objective=user_task, trajectory=trajectory, error=error),
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": prompts.get_user_prompt()
-                            },
-                            {   
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": base64_screenshot
-                                }
-                            }
-                        ]
-                    }
-                ]
-            )
-
-            content = message.content[0].text
-
-        print(content)
-
-        content = eval(content=content)
-
-        print(content)
-
         
-        trajectory.append(content)
-        try:
-            commands = json.loads(content)
-        except Exception as e:
-                print(e)
-                continue 
-        operate(commands)
-        time.sleep(5)
-        
-        # Error grounding 
-        screenshot_path = capture_screenshot()
-        #capture_and_draw_grid(32, 18)
-        base64_screenshot = encode_image(screenshot_path)
-        if provider == "OpenAI":
-            payload = [
-                    {
-                        "role": "system",
-                        "content":  [
-                            {
-                                "type": "text",
-                                "text": prompts.get_error_grounding_prompt(thought=commands, screenshot=base64_screenshot)
-                            }
-                        ]
-                    }
-                ]
-            
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages= payload
-                )
-            except Exception as e:
-                print(e)
-                continue 
-            error = response.choices[0].message.content
-        else:
-            message = client.messages.create(
-                model="claude-3-5-haiku-20241022",
-                max_tokens=1000,
-                temperature=1,
-                system=prompts.get_error_grounding_prompt(objective=user_task,thought=commands),
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {   
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": base64_screenshot
-                                }
-                            }
-                        ]
-                    }
-                ]
-                
-            )
-
-            error = message.content[0].text
-        
+        content = client.chat.completions.create(
+            model="gpt-4o",
+            messages=payload
+        )
         print(error)
 main()
