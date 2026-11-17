@@ -10,6 +10,8 @@ Open-Pilot is a Python project designed to interact with a large language model 
 
 ## Installation
 
+Requires Python 3.11 or newer (Pillow 13.0.0 requirement).
+
 1. Clone the repository:
     ```bash
     git clone https://github.com/qiaoyi213/open-pilot.git
